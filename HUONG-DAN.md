@@ -40,7 +40,7 @@ App chạy hoàn toàn trên điện thoại: camera và video **không gửi đ
 
   Sau đó app chờ khoảng 0,8 giây cho ổn định rồi mới đếm tiếp. Nếu tay vẫn thấy rõ mà không hề gập, việc đầu/vai di chuyển cũng không được tính.
 - Nằm ở dưới quá 5 giây (nghỉ) thì lượt đó không được tính.
-- Một rep có thể nhanh tới khoảng 0,5 đến 1 giây (đủ xuống và lên). Rep nhanh hơn 0,35 giây sẽ bị bỏ qua vì coi là nhiễu.
+- Rep nhanh tới khoảng **0,3 giây** (đủ xuống và lên) vẫn được đếm. Hai lần đếm cách nhau dưới 0,25 giây sẽ bị bỏ qua vì coi là nhiễu.
 - Tay màu **xanh lá** nghĩa là đang ở tư thế lên, **xanh dương** nghĩa là đang xuống.
 
 ## 4. Chỉnh ngưỡng (nếu thấy đếm thiếu hoặc thừa)
@@ -60,5 +60,5 @@ Sau khi sửa, upload lại file lên GitHub. Nhớ đổi `CACHE = 'pushup-v3'`
 ## Ghi chú kỹ thuật
 
 - Nhận diện tư thế: MediaPipe Pose Landmarker (Google, giấy phép Apache-2.0), chạy bằng WebAssembly/WebGL ngay trong Safari.
-- Camera trực tiếp dùng mô hình *lite* (nhanh). Phân tích video dùng mô hình *full* (chính xác hơn) với 15 khung hình mỗi giây.
+- Camera trực tiếp dùng mô hình *lite* (nhanh). Phân tích video dùng mô hình *full* (chính xác hơn) với 30 khung hình mỗi giây (đủ dày để bắt rep nhanh, nhưng phân tích lâu hơn).
 - App chặn gói thống kê sử dụng mà thư viện MediaPipe tự gửi về Google.

@@ -5,7 +5,7 @@ const MODEL_URLS = {
   lite: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
   full: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
 };
-const VIDEO_FPS = 15; // số khung hình phân tích mỗi giây video
+const VIDEO_FPS = 30; // số khung hình phân tích mỗi giây video (đủ dày để bắt rep < 0,5 giây)
 
 const $ = (id) => document.getElementById(id);
 const video = $('video'), canvas = $('canvas'), ctx = canvas.getContext('2d');

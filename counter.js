@@ -30,8 +30,8 @@ export const DEFAULTS = {
   frontImageMinRange: 0.25,  // biên độ tối thiểu của tín hiệu khung hình (độ giống ảnh lúc "lên", 0..1)
   frontMaxBlindSec: 2.5,     // không thấy người liên tục lâu hơn (che máy, đi chỗ khác) => bắt đầu lại
   minVisibility: 0.5,
-  smoothTau: 0.08,       // giây, làm mượt tín hiệu
-  minRepSec: 0.35,       // rep nhanh hơn mức này coi là nhiễu
+  smoothTau: 0.05,       // giây, làm mượt tín hiệu (nhỏ để bắt được rep nhanh)
+  minRepSec: 0.25,       // 2 lần đếm cách nhau ít hơn mức này coi là nhiễu
 };
 
 // Các tín hiệu cho góc trước mặt. kind 'arm' = theo tay, 'body' = theo đầu/vai.
