@@ -107,6 +107,12 @@ function draw(lm, phase) {
 }
 
 const VIEW_NAME = { side: 'Ngang người', front: 'Trước mặt' };
+const GATE_TEXT = {
+  upright: 'Đang đứng: tạm dừng đếm',
+  hands: 'Tay giơ cao: tạm dừng đếm',
+  moving: 'Máy đang di chuyển: chờ ổn định',
+  settle: 'Đang ổn định…',
+};
 function showHud(r) {
   const el = $('count');
   if (el.textContent !== String(r.count)) {
@@ -115,10 +121,13 @@ function showHud(r) {
   }
   $('bView').textContent = r.view ? `Góc: ${VIEW_NAME[r.view]}` : 'Góc: —';
   const ph = $('bPhase');
-  if (!r.valid) { ph.textContent = 'Chưa thấy rõ tư thế'; ph.className = 'badge warn'; }
+  if (r.gate && GATE_TEXT[r.gate]) { ph.textContent = GATE_TEXT[r.gate]; ph.className = 'badge warn'; }
+  else if (!r.valid) { ph.textContent = 'Chưa thấy rõ tư thế'; ph.className = 'badge warn'; }
   else { ph.textContent = r.phase === 'down' ? 'Đang xuống' : 'Đang lên'; ph.className = `badge ${r.phase}`; }
-  $('bSignal').textContent = r.signal == null ? '—'
-    : r.view === 'side' ? `Khuỷu tay: ${Math.round(r.signal)}°` : `Độ cao vai: ${r.signal.toFixed(2)}`;
+  $('bSignal').textContent = r.view === 'side'
+    ? (r.signal == null ? '—' : `Khuỷu tay: ${Math.round(r.signal)}°`)
+    : r.signal == null ? (r.valid ? 'Đang đo biên độ…' : '—')
+    : `Độ cao: ${Math.round(r.signal * 100)}%${r.cues?.length ? ` · theo ${r.cues.join(', ')}` : ''}`;
   const bp = $('bPartial');
   bp.classList.toggle('hidden', !r.partial);
   bp.textContent = `Chưa đủ sâu: ${r.partial}`;
@@ -131,7 +140,7 @@ function onEvent(r) {
 
 function resetCounter() {
   counter.reset();
-  showHud({ count: 0, partial: 0, phase: 'up', view: null, signal: null, valid: false });
+  showHud({ count: 0, partial: 0, phase: 'up', view: null, signal: null, valid: false, gate: null, cues: null });
   $('count').textContent = '0';
 }
 
@@ -254,7 +263,7 @@ async function analyzeVideo(file) {
     const res = lmk.detectForVideo(video, nextTs(lastTs + step * 1000));
     const lm = res.landmarks?.[0];
     const r = counter.update(lm, t, aspect);
-    frames.push({ t, lm: lm ? lm.map((p) => ({ x: p.x, y: p.y, visibility: p.visibility })) : null, count: r.count, partial: r.partial, phase: r.phase, view: r.view, signal: r.signal, valid: r.valid });
+    frames.push({ t, lm: lm ? lm.map((p) => ({ x: p.x, y: p.y, visibility: p.visibility })) : null, count: r.count, partial: r.partial, phase: r.phase, view: r.view, signal: r.signal, valid: r.valid, gate: r.gate, cues: r.cues });
     const now = performance.now();
     if (now - lastPaint > 60) { draw(lm, r.phase); showHud(r); bar.firstElementChild.style.width = `${(100 * t) / dur}%`; lastPaint = now; }
     if (r.event === 'rep') showHud(r);
@@ -290,7 +299,7 @@ function showResult(dur) {
   const ul = $('repList'); ul.innerHTML = '';
   reps.forEach((r, i) => {
     const li = document.createElement('li');
-    const detail = counter.view === 'side' ? `góc thấp nhất ${r.depth}°` : `biên độ ${r.depth}`;
+    const detail = counter.view === 'side' ? `góc thấp nhất ${r.depth}°` : `biên độ ${r.depth} lần bề rộng vai`;
     li.innerHTML = `<b>Rep ${i + 1}</b><span>${fmt(r.t)} · ${detail}</span>`;
     li.onclick = () => { video.currentTime = Math.max(0, r.t - 1.2); video.play(); };
     ul.appendChild(li);

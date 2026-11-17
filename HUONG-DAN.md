@@ -25,10 +25,19 @@ App chạy hoàn toàn trên điện thoại: camera và video **không gửi đ
 | Góc quay | Đặt máy | Cách app đếm |
 |---|---|---|
 | **Ngang người** | Đặt máy dưới sàn, cách 1,5–2 m, thấy rõ vai, khuỷu tay, cổ tay và hông | Góc khuỷu tay: xuống ≤ 100°, lên ≥ 150° thì tính 1 rep. Nếu xuống chưa tới 100° rồi lên lại, app đếm là **rep chưa đủ sâu** |
-| **Trước mặt** | Đặt máy dưới sàn phía trước đầu, cách khoảng 1,5 m, thấy rõ 2 vai và 2 cổ tay | Đo độ hạ của vai so với cổ tay, tự điều chỉnh theo biên độ của bạn |
+| **Trước mặt** | Đặt máy dưới sàn phía trước đầu, cách khoảng 1,5 m. Tốt nhất là thấy rõ 2 vai và 2 tay | Kết hợp 4 tín hiệu: cổ tay so với vai, khuỷu tay gập lại, vai hạ xuống, đầu hạ xuống. Tự điều chỉnh theo biên độ của bạn |
 
-- Nên để chế độ **Tự động**. App tự nhận ra bạn đang quay ngang hay quay trước mặt. Nếu app nhận sai, hãy chọn tay.
-- Lên/xuống bình thường. Rep nhanh hơn 0,35 giây sẽ bị bỏ qua vì coi là nhiễu.
+- Nên để chế độ **Tự động**. App tự nhận ra bạn đang quay ngang hay quay trước mặt (dựa vào bề rộng vai và hướng mặt). Nếu app nhận sai, hãy chọn tay.
+- Quay trước mặt mà **ở quá gần camera** (không thấy cổ tay) hoặc **bị che một bên vai**: app vẫn đếm được nhờ đầu, vai và khuỷu tay còn thấy. Dòng nhỏ trên màn hình cho biết app đang đếm "theo" những bộ phận nào.
+- Quay trước mặt, app **tạm dừng đếm** khi:
+  - bạn đang đứng (thấy rõ chân/hông thấp hơn vai nhiều);
+  - tay giơ cao hơn vai (đang với tay chỉnh máy);
+  - khung hình bị trượt, giật hoặc xoay (đang chỉnh máy);
+  - không thấy người quá 0,4 giây.
+
+  Sau đó app chờ khoảng 0,8 giây cho ổn định rồi mới đếm tiếp. Nếu tay vẫn thấy rõ mà không hề gập, việc đầu/vai di chuyển cũng không được tính.
+- Nằm ở dưới quá 5 giây (nghỉ) thì lượt đó không được tính.
+- Một rep có thể nhanh tới khoảng 0,5 đến 1 giây (đủ xuống và lên). Rep nhanh hơn 0,35 giây sẽ bị bỏ qua vì coi là nhiễu.
 - Tay màu **xanh lá** nghĩa là đang ở tư thế lên, **xanh dương** nghĩa là đang xuống.
 
 ## 4. Chỉnh ngưỡng (nếu thấy đếm thiếu hoặc thừa)
@@ -37,9 +46,11 @@ Mở `counter.js` và sửa các số trong `DEFAULTS`:
 
 - `sideDownAngle` (mặc định 100): tăng lên (ví dụ 110) nếu app hay bỏ sót rep khi quay ngang.
 - `sideUpAngle` (mặc định 150): giảm xuống (ví dụ 140) nếu bạn không duỗi thẳng tay hẳn.
-- `frontMinRange` (mặc định 0,45): giảm xuống nếu app bỏ sót rep khi quay trước mặt, tăng lên nếu app đếm thừa.
+- `frontMinRange` (0,45), `frontElbowMinRange` (0,25), `frontHeadMinRange` (0,30): biên độ tối thiểu khi quay trước mặt, lần lượt cho cổ tay, khuỷu tay, và đầu/vai. Giảm xuống nếu app bỏ sót rep, tăng lên nếu app đếm thừa.
+- `frontMaxSideSpeed` (2,0) / `frontMaxVertSpeed` (6,0): giảm xuống nếu app vẫn đếm lúc bạn chỉnh máy. Tăng lên nếu app hay báo "Máy đang di chuyển" khi bạn đang tập bình thường.
+- `frontSettleSec` (0,8): thời gian chờ ổn định sau khi đứng dậy hoặc chỉnh máy.
 
-Sau khi sửa, upload lại file lên GitHub. Nhớ đổi `CACHE = 'pushup-v1'` trong `sw.js` thành `v2`, `v3`… để iPhone nhận bản mới. Sau đó mở app 2 lần (lúc có mạng) là app cập nhật.
+Sau khi sửa, upload lại file lên GitHub. Nhớ đổi `CACHE = 'pushup-v2'` trong `sw.js` thành `v3`, `v4`… để iPhone nhận bản mới. Sau đó mở app 2 lần (lúc có mạng) là app cập nhật.
 
 ## Ghi chú kỹ thuật
 

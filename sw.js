@@ -1,5 +1,5 @@
 // Service worker: lưu app + mô hình vào máy để dùng offline.
-const CACHE = 'pushup-v1';
+const CACHE = 'pushup-v2';
 const LOCAL = [
   './', './index.html', './app.js', './counter.js', './manifest.webmanifest',
   './vendor/vision_bundle.mjs', './vendor/wasm/vision_wasm_internal.js', './vendor/wasm/vision_wasm_internal.wasm',
