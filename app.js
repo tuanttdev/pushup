@@ -26,6 +26,20 @@ const state = {
 
 const counter = new PushupCounter({ view: state.view });
 
+// Ảnh xám thu nhỏ 24x32 của khung hình: giúp đếm khi đầu áp sát camera (MediaPipe không thấy người)
+const thumbCv = document.createElement('canvas');
+thumbCv.width = 24; thumbCv.height = 32;
+const thumbCtx = thumbCv.getContext('2d', { willReadFrequently: true });
+const thumbBuf = new Float32Array(24 * 32);
+function grabThumb() {
+  try {
+    thumbCtx.drawImage(video, 0, 0, 24, 32);
+    const d = thumbCtx.getImageData(0, 0, 24, 32).data;
+    for (let i = 0; i < thumbBuf.length; i++) thumbBuf[i] = (0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]) / 255;
+    return thumbBuf;
+  } catch { return null; }
+}
+
 // ---------- Service worker (chạy offline) ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -111,6 +125,7 @@ const GATE_TEXT = {
   upright: 'Đang đứng: tạm dừng đếm',
   hands: 'Tay giơ cao: tạm dừng đếm',
   moving: 'Máy đang di chuyển: chờ ổn định',
+  lost: 'Không thấy người: chờ…',
   settle: 'Đang ổn định…',
 };
 function showHud(r) {
@@ -176,7 +191,7 @@ async function startCamera() {
       const now = performance.now();
       const res = lmk.detectForVideo(video, nextTs(now));
       const lm = res.landmarks?.[0];
-      const r = counter.update(lm, now / 1000, video.videoWidth / video.videoHeight);
+      const r = counter.update(lm, now / 1000, video.videoWidth / video.videoHeight, grabThumb());
       draw(lm, r.phase); showHud(r); onEvent(r);
     }
     requestAnimationFrame(loop);
@@ -262,7 +277,7 @@ async function analyzeVideo(file) {
     await seek(t);
     const res = lmk.detectForVideo(video, nextTs(lastTs + step * 1000));
     const lm = res.landmarks?.[0];
-    const r = counter.update(lm, t, aspect);
+    const r = counter.update(lm, t, aspect, grabThumb());
     frames.push({ t, lm: lm ? lm.map((p) => ({ x: p.x, y: p.y, visibility: p.visibility })) : null, count: r.count, partial: r.partial, phase: r.phase, view: r.view, signal: r.signal, valid: r.valid, gate: r.gate, cues: r.cues });
     const now = performance.now();
     if (now - lastPaint > 60) { draw(lm, r.phase); showHud(r); bar.firstElementChild.style.width = `${(100 * t) / dur}%`; lastPaint = now; }

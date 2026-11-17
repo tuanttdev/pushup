@@ -27,6 +27,8 @@ export const DEFAULTS = {
   frontMaxTiltDeg: 30,     // đường vai nghiêng quá mức này => máy bị xoay / đang chỉnh
   frontUprightLegRatio: 2.0, // thấy rõ chân, chân thấp hơn vai > 2 lần bề rộng vai => đang đứng
   frontUprightHipRatio: 1.4, // thấy rõ hông, hông thấp hơn vai > 1,4 lần bề rộng vai => đang đứng
+  frontImageMinRange: 0.25,  // biên độ tối thiểu của tín hiệu khung hình (độ giống ảnh lúc "lên", 0..1)
+  frontMaxBlindSec: 2.5,     // không thấy người liên tục lâu hơn (che máy, đi chỗ khác) => bắt đầu lại
   minVisibility: 0.5,
   smoothTau: 0.08,       // giây, làm mượt tín hiệu
   minRepSec: 0.35,       // rep nhanh hơn mức này coi là nhiễu
@@ -38,7 +40,26 @@ const FRONT_CUES = [
   { key: 'elbow', name: 'khuỷu tay', kind: 'arm', w: 1.0, min: 'frontElbowMinRange' },
   { key: 'shoulder', name: 'vai', kind: 'body', w: 0.7, min: 'frontHeadMinRange' },
   { key: 'head', name: 'đầu', kind: 'body', w: 0.7, min: 'frontHeadMinRange' },
+  // Khung hình: độ giống với ảnh lúc "lên". Khi đầu áp sát camera, MediaPipe thường không
+  // thấy người, nhưng khung hình thay đổi rất rõ => vẫn đếm được.
+  { key: 'image', name: 'khung hình', kind: 'image', w: 1.0, min: 'frontImageMinRange', absolute: true },
 ];
+
+// Chuẩn hoá ảnh xám: trừ trung bình, chia độ dài => so sánh bằng tích vô hướng (không phụ thuộc độ sáng)
+function normThumb(a) {
+  const n = a.length;
+  let m = 0;
+  for (let i = 0; i < n; i++) m += a[i];
+  m /= n;
+  const out = new Float32Array(n);
+  let s = 0;
+  for (let i = 0; i < n; i++) { out[i] = a[i] - m; s += out[i] * out[i]; }
+  s = Math.sqrt(s);
+  if (s < 1e-6) return null;
+  for (let i = 0; i < n; i++) out[i] /= s;
+  return out;
+}
+const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -75,6 +96,8 @@ export class PushupCounter {
     this._scale = null;   // bề rộng vai (đã làm mượt), dùng cho góc trước mặt
     this._earK = 2.5;     // tỉ lệ bề rộng vai / khoảng cách 2 tai (tự học)
     this._eyeK = 4.5;     // tỉ lệ bề rộng vai / khoảng cách 2 khoé mắt ngoài (tự học)
+    this._badScaleT = null; // thời điểm bắt đầu thấy bề rộng vai "nhảy" bất thường
+    this._ref = null;     // ảnh khung hình mẫu lúc đang ở tư thế lên (đã chuẩn hoá)
     this._resetSignal();
   }
 
@@ -98,16 +121,19 @@ export class PushupCounter {
       prevT: null,
       speedX: 0, speedY: 0,
       lastSeen: t,
+      lastPose: t,          // lần cuối thấy tư thế người đáng tin
       settleUntil: t == null ? -1e9 : t + this.o.frontSettleSec,
       downT: 0,
     };
   }
 
   // landmarks: mảng 33 điểm; t: giây; aspect = width/height của khung hình
-  update(lm, t, aspect = 1) {
+  // thumb (tuỳ chọn): ảnh xám thu nhỏ của khung hình (mảng số), dùng khi người quá sát camera
+  update(lm, t, aspect = 1, thumb = null) {
     const out = { event: null, valid: false };
     if (!lm || lm.length < 29) {
-      if (this.view === 'front') this._frontLost(t);
+      // Không thấy người (thường gặp khi đầu áp sát camera lúc xuống): vẫn đếm bằng khung hình
+      if (this.view === 'front') this._updateFront(null, t, out, thumb);
       return this._result(out);
     }
     // đưa về toạ độ có tỉ lệ đúng (x nhân aspect); in = điểm nằm trong khung hình
@@ -146,7 +172,7 @@ export class PushupCounter {
     };
 
     if (view === 'side') this._updateSide(p, t, smooth, out);
-    else this._updateFront(p, t, out);
+    else this._updateFront(p, t, out, thumb);
     return this._result(out);
   }
 
@@ -215,55 +241,81 @@ export class PushupCounter {
     if (F.lastSeen != null && t - F.lastSeen > this.o.frontLostSec) { this._frontReset(t); this.signal = null; }
   }
 
-  // Góc trước mặt: kết hợp 4 tín hiệu, mỗi tín hiệu có ngưỡng thích nghi riêng
+  // Góc trước mặt: kết hợp nhiều tín hiệu, mỗi tín hiệu có ngưỡng thích nghi riêng
   //  - cổ tay so với vai; khuỷu tay so với vai (khuỷu gập lại khi xuống)
-  //  - độ cao của vai; độ cao của đầu (dùng được khi quá gần camera / không thấy cổ tay / bị che 1 vai)
+  //  - độ cao của vai; độ cao của đầu (dùng được khi không thấy cổ tay / bị che 1 vai)
+  //  - khung hình (dùng được cả khi đầu áp sát camera và MediaPipe không thấy người)
   // và chặn đếm thừa khi đang đứng, đang chỉnh máy hoặc mất dấu người.
-  _updateFront(p, t, out) {
+  // p = null khi MediaPipe không thấy người.
+  _updateFront(p, t, out, thumb) {
     const o = this.o;
     const ok = (q) => q.v >= o.minVisibility && q.in;
 
-    // --- Thước đo: bề rộng vai, hoặc suy ra từ khoảng cách 2 tai / 2 mắt khi bị che 1 vai ---
-    const lS = ok(p.lSh), rS = ok(p.rSh);
-    const earW = ok(p.lEar) && ok(p.rEar) ? Math.abs(p.lEar.x - p.rEar.x) : 0;
-    const eyeW = ok(p.lEye) && ok(p.rEye) ? Math.abs(p.lEye.x - p.rEye.x) : 0;
-    let sc = 0;
-    if (lS && rS) {
-      sc = dist(p.lSh, p.rSh);
-      if (earW > 0) { const k = sc / earW; if (k > 1.2 && k < 5) this._earK += 0.05 * (k - this._earK); }
-      if (eyeW > 0) { const k = sc / eyeW; if (k > 2 && k < 9) this._eyeK += 0.05 * (k - this._eyeK); }
-    } else if (earW > 0) sc = earW * this._earK;
-    else if (eyeW > 0) sc = eyeW * this._eyeK;
-    else if (this._scale == null) {
-      // chưa có thước đo nào: tạm lấy theo cánh tay trên đang thấy (bề rộng vai ≈ 1,3 lần)
-      const arm = [[p.lSh, p.lEl], [p.rSh, p.rEl]].find(([a, b]) => ok(a) && ok(b));
-      if (arm) sc = 1.3 * dist(arm[0], arm[1]);
-    }
-    if (sc > 0) this._scale = this._scale == null ? sc : this._scale + 0.1 * (sc - this._scale);
-    const S = this._scale;
-
-    // --- Giá trị thô của từng tín hiệu (lớn = đang lên) ---
-    const wr = [], el = [];
-    for (const [sh, e, w, shOK] of [[p.lSh, p.lEl, p.lWr, lS], [p.rSh, p.rEl, p.rWr, rS]]) {
-      if (!shOK) continue;
-      if (ok(e)) el.push(e.y - sh.y);
-      if (ok(w)) wr.push(w.y - sh.y);
-    }
-    const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
-    const shY = lS && rS ? (p.lSh.y + p.rSh.y) / 2 : lS ? p.lSh.y : rS ? p.rSh.y : null;
+    // --- Tư thế từ MediaPipe: chỉ dùng khi đáng tin ---
+    let S = this._scale, poseOK = false, sc = 0, shY = null;
     const raw = {};
-    if (wr.length) raw.wrist = mean(wr);
-    if (el.length) raw.elbow = mean(el);
-    if (shY != null) raw.shoulder = -shY;
-    if (ok(p.nose)) raw.head = -p.nose.y;
+    if (p) {
+      // Thước đo: bề rộng vai, hoặc suy ra từ khoảng cách 2 tai / 2 mắt khi bị che 1 vai
+      const lS = ok(p.lSh), rS = ok(p.rSh);
+      const earW = ok(p.lEar) && ok(p.rEar) ? Math.abs(p.lEar.x - p.rEar.x) : 0;
+      const eyeW = ok(p.lEye) && ok(p.rEye) ? Math.abs(p.lEye.x - p.rEye.x) : 0;
+      if (lS && rS) sc = dist(p.lSh, p.rSh);
+      else if (earW > 0) sc = earW * this._earK;
+      else if (eyeW > 0) sc = eyeW * this._eyeK;
+      else if (S == null) {
+        // chưa có thước đo nào: tạm lấy theo cánh tay trên đang thấy (bề rộng vai ≈ 1,3 lần)
+        const arm = [[p.lSh, p.lEl], [p.rSh, p.rEl]].find(([a, b]) => ok(a) && ok(b));
+        if (arm) sc = 1.3 * dist(arm[0], arm[1]);
+      } else sc = S; // không đo lại được: giữ thước đo cũ
+      if (sc > 0) {
+        if (S == null || (sc / S > 0.55 && sc / S < 1.8)) poseOK = true;
+        else if (this._badScaleT == null) this._badScaleT = t;
+        // Kích thước người "nhảy" bất thường: thường là MediaPipe đoán sai khi người quá sát máy
+        // => bỏ qua khung đó. Nếu kéo dài > 1 giây thì coi là người thật sự đã đổi chỗ.
+        else if (t - this._badScaleT > 1) { S = null; poseOK = true; }
+      }
+      if (poseOK) {
+        this._badScaleT = null;
+        S = this._scale = S == null ? sc : S + 0.1 * (sc - S);
+        if (lS && rS) {
+          if (earW > 0) { const k = sc / earW; if (k > 1.2 && k < 5) this._earK += 0.05 * (k - this._earK); }
+          if (eyeW > 0) { const k = sc / eyeW; if (k > 2 && k < 9) this._eyeK += 0.05 * (k - this._eyeK); }
+        }
+        const wr = [], el = [];
+        for (const [sh, e, w, shOK] of [[p.lSh, p.lEl, p.lWr, lS], [p.rSh, p.rEl, p.rWr, rS]]) {
+          if (!shOK) continue;
+          if (ok(e)) el.push(e.y - sh.y);
+          if (ok(w)) wr.push(w.y - sh.y);
+        }
+        const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+        shY = lS && rS ? (p.lSh.y + p.rSh.y) / 2 : lS ? p.lSh.y : rS ? p.rSh.y : null;
+        if (wr.length) raw.wrist = mean(wr);
+        if (el.length) raw.elbow = mean(el);
+        if (shY != null) raw.shoulder = -shY;
+        if (ok(p.nose)) raw.head = -p.nose.y;
+      }
+    }
+    if (!Object.keys(raw).length) poseOK = false;
 
-    if (!S || !Object.keys(raw).length) { this._frontLost(t); return; }
+    // --- Khung hình: độ giống ảnh mẫu lúc "lên" ---
+    const nt = thumb ? normThumb(thumb) : null;
+    if (nt && this._ref && this._ref.length === nt.length) raw.image = dot(nt, this._ref);
+
     this._frontLost(t);
     const F = this._f;
+    if (poseOK) F.lastPose = t;
+    if (!Object.keys(raw).length) return;
     F.lastSeen = t;
+    // Không thấy người liên tục quá lâu (che máy, đi chỗ khác…) => bắt đầu lại
+    if (F.lastPose == null) F.lastPose = t;
+    if (t - F.lastPose > o.frontMaxBlindSec) {
+      this._frontReset(t); this._f.lastPose = t - o.frontMaxBlindSec; this.signal = null;
+      out.gate = 'lost';
+      return;
+    }
 
-    // --- Chặn: đang đứng / đang chỉnh máy ---
-    const gate = this._frontGate(p, t, S, sc, shY, ok);
+    // --- Chặn: đang đứng / đang chỉnh máy (chỉ xét khi tư thế đáng tin) ---
+    const gate = poseOK ? this._frontGate(p, t, S, shY, ok) : null;
     if (gate) {
       this._frontReset(t);
       this.signal = null;
@@ -299,17 +351,31 @@ export class PushupCounter {
     }
     const bodyAllowed = !armSeen || armMoving;
 
-    let wsum = 0, fsum = 0, amp = 0;
+    let wsum = 0, fsum = 0, pw = 0, pf = 0, amp = 0;
     const used = [];
     for (const cue of FRONT_CUES) {
       const c = F.cues[cue.key];
       if (!c || c.t !== t) continue;
       if (cue.kind === 'body' && !bodyAllowed) continue;
       const range = c.mx - c.mn;
-      if (range < o[cue.min] * S) continue;
-      wsum += cue.w; fsum += (cue.w * (c.s - c.mn)) / range; amp += (cue.w * range) / S;
+      if (range < o[cue.min] * (cue.absolute ? 1 : S)) continue;
+      const f = (c.s - c.mn) / range;
+      wsum += cue.w; fsum += cue.w * f;
+      if (!cue.absolute) { pw += cue.w; pf += cue.w * f; amp += (cue.w * range) / S; }
       used.push(cue.name);
     }
+    const poseFrac = pw ? pf / pw : null;
+
+    // Cập nhật ảnh mẫu "lên": khi thấy rõ mặt + vai, và tư thế (nếu đo được) đang ở trên cao
+    if (nt && poseOK && ok(p.nose) && (ok(p.lSh) || ok(p.rSh)) && (poseFrac == null || poseFrac >= o.frontUpFrac)) {
+      if (!this._ref || this._ref.length !== nt.length) this._ref = nt;
+      else {
+        const r = new Float32Array(nt.length);
+        for (let i = 0; i < r.length; i++) r[i] = this._ref[i] + 0.15 * (nt[i] - this._ref[i]);
+        this._ref = normThumb(r) || this._ref;
+      }
+    }
+
     out.cues = used;
     if (!wsum) { this.signal = null; return; }
     const frac = fsum / wsum;
@@ -319,17 +385,21 @@ export class PushupCounter {
 
     if (this.phase === 'up') {
       if (frac >= o.frontUpFrac) this._armed = true;
-      else if (frac <= o.frontDownFrac && this._armed) { this.phase = 'down'; F.downT = t; }
+      else if (frac <= o.frontDownFrac && this._armed) { this.phase = 'down'; F.downT = t; F.amp = 0; }
     } else if (t - F.downT > o.frontMaxDownSec) {
       this.phase = 'up'; this._armed = false; // nằm nghỉ quá lâu: không tính lượt này
-    } else if (frac >= o.frontUpFrac) {
-      this.phase = 'up';
-      this._countRep(t, +(amp / wsum).toFixed(2), out);
+    } else {
+      if (pw) F.amp = Math.max(F.amp, amp / pw);
+      if (frac >= o.frontUpFrac) {
+        this.phase = 'up';
+        const depth = pw ? amp / pw : F.amp;
+        this._countRep(t, +depth.toFixed(2), out);
+      }
     }
   }
 
   // Trả về lý do tạm dừng đếm ('upright' | 'hands' | 'moving'), hoặc null nếu bình thường
-  _frontGate(p, t, S, sc, shY, ok) {
+  _frontGate(p, t, S, shY, ok) {
     const o = this.o, F = this._f;
     let gate = null;
 
@@ -348,7 +418,7 @@ export class PushupCounter {
     const vx = [], vy = [];
     for (const k of ['nose', 'lSh', 'rSh']) {
       const q = p[k], pr = F.prev[k];
-      if (ok(q) && pr && dt > 0 && dt < 0.5) { vx.push(Math.abs(q.x - pr.x) / dt); vy.push(Math.abs(q.y - pr.y) / dt); }
+      if (ok(q) && pr && dt > 0 && dt < 0.25) { vx.push(Math.abs(q.x - pr.x) / dt); vy.push(Math.abs(q.y - pr.y) / dt); }
       F.prev[k] = ok(q) ? { x: q.x, y: q.y } : null;
     }
     F.prevT = t;
@@ -363,7 +433,6 @@ export class PushupCounter {
       const tilt = (Math.atan2(Math.abs(p.lSh.y - p.rSh.y), Math.abs(p.lSh.x - p.rSh.x)) * 180) / Math.PI;
       if (tilt > o.frontMaxTiltDeg) gate = 'moving';
     }
-    if (!gate && sc > 0 && (sc / S > 1.8 || sc / S < 0.55)) gate = 'moving';
     return gate;
   }
 

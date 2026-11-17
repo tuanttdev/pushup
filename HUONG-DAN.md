@@ -29,11 +29,14 @@ App chạy hoàn toàn trên điện thoại: camera và video **không gửi đ
 
 - Nên để chế độ **Tự động**. App tự nhận ra bạn đang quay ngang hay quay trước mặt (dựa vào bề rộng vai và hướng mặt). Nếu app nhận sai, hãy chọn tay.
 - Quay trước mặt mà **ở quá gần camera** (không thấy cổ tay) hoặc **bị che một bên vai**: app vẫn đếm được nhờ đầu, vai và khuỷu tay còn thấy. Dòng nhỏ trên màn hình cho biết app đang đếm "theo" những bộ phận nào.
+- **Đặt máy sát mặt** (lúc xuống, đầu che gần hết camera): AI thường không nhận ra người ở tư thế này. App sẽ đếm "theo khung hình": so khung hình hiện tại với lúc bạn đang ở trên cao. Để chế độ này chạy tốt:
+  - bắt đầu bằng tư thế **lên** (tay duỗi thẳng, thấy rõ mặt và vai) khoảng 1 giây;
+  - đặt máy cố định, đừng để máy bị xô lệch giữa chừng.
 - Quay trước mặt, app **tạm dừng đếm** khi:
   - bạn đang đứng (thấy rõ chân/hông thấp hơn vai nhiều);
   - tay giơ cao hơn vai (đang với tay chỉnh máy);
   - khung hình bị trượt, giật hoặc xoay (đang chỉnh máy);
-  - không thấy người quá 0,4 giây.
+  - không thấy người quá 0,4 giây (nếu đang không đếm theo khung hình), hoặc liên tục quá 2,5 giây (ví dụ lấy tay che máy).
 
   Sau đó app chờ khoảng 0,8 giây cho ổn định rồi mới đếm tiếp. Nếu tay vẫn thấy rõ mà không hề gập, việc đầu/vai di chuyển cũng không được tính.
 - Nằm ở dưới quá 5 giây (nghỉ) thì lượt đó không được tính.
@@ -49,8 +52,10 @@ Mở `counter.js` và sửa các số trong `DEFAULTS`:
 - `frontMinRange` (0,45), `frontElbowMinRange` (0,25), `frontHeadMinRange` (0,30): biên độ tối thiểu khi quay trước mặt, lần lượt cho cổ tay, khuỷu tay, và đầu/vai. Giảm xuống nếu app bỏ sót rep, tăng lên nếu app đếm thừa.
 - `frontMaxSideSpeed` (2,0) / `frontMaxVertSpeed` (6,0): giảm xuống nếu app vẫn đếm lúc bạn chỉnh máy. Tăng lên nếu app hay báo "Máy đang di chuyển" khi bạn đang tập bình thường.
 - `frontSettleSec` (0,8): thời gian chờ ổn định sau khi đứng dậy hoặc chỉnh máy.
+- `frontImageMinRange` (0,25): biên độ tối thiểu khi đếm theo khung hình (đặt máy sát mặt). Tăng lên nếu app đếm thừa.
+- `frontMaxBlindSec` (2,5): không thấy người lâu hơn mức này thì bắt đầu lại. Tăng lên nếu bạn xuống rất chậm và giữ lâu ở dưới.
 
-Sau khi sửa, upload lại file lên GitHub. Nhớ đổi `CACHE = 'pushup-v2'` trong `sw.js` thành `v3`, `v4`… để iPhone nhận bản mới. Sau đó mở app 2 lần (lúc có mạng) là app cập nhật.
+Sau khi sửa, upload lại file lên GitHub. Nhớ đổi `CACHE = 'pushup-v3'` trong `sw.js` thành `v4`, `v5`… để iPhone nhận bản mới. Sau đó mở app 2 lần (lúc có mạng) là app cập nhật.
 
 ## Ghi chú kỹ thuật
 
