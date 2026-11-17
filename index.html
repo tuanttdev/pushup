@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Đếm Hít Đất</title>
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hít Đất">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --line: #2a2f3a; --text: #e9ecf2; --muted: #8b93a3;
+    --accent: #3ddc84; --warn: #ffb020; --down: #4aa3ff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { padding: env(safe-area-inset-top) 12px calc(16px + env(safe-area-inset-bottom)); max-width: 720px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 10px 2px 8px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 700; }
+  .seg { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 3px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--muted); padding: 8px 6px; border-radius: 7px; font: inherit; font-size: 14px; }
+  .seg button.on { background: #2b3140; color: var(--text); font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .row > .label { font-size: 13px; color: var(--muted); min-width: 66px; }
+  .row .seg { flex: 1; }
+  .stage { position: relative; width: 100%; margin: 10px auto 0; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 3/4; }
+  .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+  .stage.mirror video, .stage.mirror canvas { transform: scaleX(-1); }
+  .hud { position: absolute; left: 0; right: 0; top: 0; display: flex; justify-content: space-between; align-items: flex-start; padding: 10px 12px; pointer-events: none; }
+  .count { font-size: 76px; font-weight: 800; line-height: 1; text-shadow: 0 2px 12px rgba(0,0,0,.7); font-variant-numeric: tabular-nums; }
+  .count.bump { animation: bump .25s ease-out; }
+  @keyframes bump { from { transform: scale(1.25); color: var(--accent); } to { transform: scale(1); } }
+  .badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .badge { background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 6px; font-size: 13px; }
+  .badge.down { color: var(--down); } .badge.up { color: var(--accent); } .badge.warn { color: var(--warn); }
+  .center-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--muted); font-size: 15px; pointer-events: none; }
+  .btns { display: flex; gap: 8px; margin-top: 10px; }
+  .btn { flex: 1; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 13px 10px; border-radius: 12px; font: inherit; font-weight: 600; text-align: center; }
+  .btn.primary { background: var(--accent); color: #062b14; border-color: var(--accent); }
+  .btn.danger { background: #3a1d22; border-color: #5a2a31; color: #ff8a98; }
+  .btn:disabled { opacity: .45; }
+  .btn input { display: none; }
+  .progress { height: 6px; background: var(--panel); border-radius: 3px; overflow: hidden; margin-top: 10px; display: none; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-top: 12px; }
+  .summary { display: flex; gap: 16px; }
+  .summary div b { display: block; font-size: 26px; }
+  .summary div span { color: var(--muted); font-size: 13px; }
+  .reps { list-style: none; padding: 0; margin: 10px 0 0; max-height: 260px; overflow: auto; }
+  .reps li { display: flex; justify-content: space-between; padding: 9px 4px; border-top: 1px solid var(--line); font-size: 14px; }
+  .reps li span { color: var(--muted); }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .hidden { display: none !important; }
+  .toggle { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Đếm Hít Đất</h1>
+    <label class="toggle"><input type="checkbox" id="sound" checked> Đọc số</label>
+  </header>
+
+  <div class="seg" id="modeSeg">
+    <button data-mode="camera" class="on">Camera trực tiếp</button>
+    <button data-mode="video">Phân tích video</button>
+  </div>
+
+  <div class="row">
+    <div class="label">Góc quay</div>
+    <div class="seg" id="viewSeg">
+      <button data-view="auto" class="on">Tự động</button>
+      <button data-view="side">Ngang</button>
+      <button data-view="front">Trước mặt</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div class="hud">
+      <div class="count" id="count">0</div>
+      <div class="badges">
+        <div class="badge" id="bView">—</div>
+        <div class="badge" id="bPhase">—</div>
+        <div class="badge" id="bSignal">—</div>
+        <div class="badge warn hidden" id="bPartial"></div>
+      </div>
+    </div>
+    <div class="center-msg" id="msg">Đang tải mô hình AI…</div>
+  </div>
+  <div class="progress" id="progress"><div></div></div>
+
+  <!-- Camera -->
+  <section id="camCtl">
+    <div class="btns">
+      <button class="btn primary" id="btnStart" disabled>Bắt đầu</button>
+      <button class="btn" id="btnFlip">Đổi camera</button>
+      <button class="btn" id="btnReset">Đặt lại</button>
+    </div>
+    <div class="hint" id="camHint">Đặt điện thoại trên sàn, cách 1,5–2 m. Quay ngang người: thấy rõ vai, khuỷu tay, cổ tay và hông. Quay trước mặt: thấy rõ hai vai và hai cổ tay.</div>
+  </section>
+
+  <!-- Video -->
+  <section id="vidCtl" class="hidden">
+    <div class="btns">
+      <label class="btn primary" id="btnPick">Chọn video
+        <input type="file" id="file" accept="video/*">
+      </label>
+      <button class="btn danger hidden" id="btnCancel">Huỷ</button>
+    </div>
+    <div class="card hidden" id="result">
+      <div class="summary">
+        <div><b id="rCount">0</b><span>rep đủ chuẩn</span></div>
+        <div id="rPartialBox"><b id="rPartial">0</b><span>rep chưa đủ sâu</span></div>
+        <div><b id="rPace">–</b><span>rep/phút</span></div>
+      </div>
+      <ul class="reps" id="repList"></ul>
+      <div class="hint">Chạm vào một rep để tua tới đoạn đó. Bấm phát video để xem lại kèm khung xương.</div>
+    </div>
+    <div class="hint" id="vidHint">Video được xử lý ngay trên điện thoại, không gửi đi đâu cả. Video dài 1 phút mất khoảng 1–2 phút để phân tích.</div>
+  </section>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
